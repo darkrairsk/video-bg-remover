@@ -32,9 +32,9 @@ python remove_bg.py path/to/your/video.mov
 This will generate a video with a solid green background (Green Screen) by default. The script supports common video formats like `.mp4`, `.mov`, and `.avi`. The output will be saved in the same directory as the input video with `_processed` appended to the filename and the same extension as the original video.
 
 ### Using a Custom Background Color:
-You can specify a custom background color using a HEX code.
+You can specify a custom background color using a HEX code (both 6-character like `#FF0000` and 8-character with alpha like `#0adb3eff` are supported).
 ```bash
-python remove_bg.py user_video.mov --bg-color "#FF0000"
+python remove_bg.py user_video.mov --bg-color "#0adb3eff"
 ```
 
 ### Using a Custom Background Image:
@@ -50,4 +50,4 @@ python remove_bg.py user_video.mov --format png
 ```
 
 ## How It Works
-We use [MediaPipe's Selfie Segmentation](https://google.github.io/mediapipe/solutions/selfie_segmentation.html) to separate the foreground subject from the background dynamically.
+We use the **MediaPipe Tasks API (ImageSegmenter)** to intelligently separate the foreground subject from the background dynamically. The script will automatically download the required `selfie_segmenter.tflite` model directly from Google upon its very first run, so no manual setup of the ML model is required.
