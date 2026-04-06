@@ -1,17 +1,34 @@
 import argparse
 import sys
 import cv2
-import mediapipe as mp
 import numpy as np
 from pathlib import Path
+import urllib.request
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+def download_model_if_needed():
+    model_path = Path('selfie_segmenter.tflite')
+    if not model_path.exists():
+        print("Downloading MediaPipe Segmenter Model...")
+        url = "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite"
+        urllib.request.urlretrieve(url, str(model_path))
+    return str(model_path)
+
+def get_segmenter(model_path):
+    base_options = python.BaseOptions(model_asset_path=model_path)
+    options = vision.ImageSegmenterOptions(
+        base_options=base_options,
+        output_confidence_masks=True
+    )
+    return vision.ImageSegmenter.create_from_options(options)
 
 def main():
     parser = argparse.ArgumentParser(description="Remove background from a video using MediaPipe.")
     
-    # Requirement 2: Terminal command takes path to video
     parser.add_argument("input_video", help="Path to the input video file")
     
-    # Requirement 1 & 3: Configurable options, default is mp4
     parser.add_argument(
         "--format", 
         choices=["video", "png"], 
@@ -23,7 +40,7 @@ def main():
         "--bg-color",
         type=str,
         default="#00FF00",
-        help="Background color in HEX format (e.g., '#FF0000'). Default is green."
+        help="Background color in HEX format (e.g., '#FF0000' or '#FF0000FF'). Default is green."
     )
     
     parser.add_argument(
@@ -40,11 +57,10 @@ def main():
         print(f"Error: The video file '{input_video_path}' does not exist.")
         sys.exit(1)
         
-    # Requirement 4: Output in same folder, with _processed added
     if args.format == "video":
         output_ext = input_video_path.suffix if input_video_path.suffix.lower() in ['.mp4', '.mov', '.avi', '.mkv'] else '.mp4'
         output_path = input_video_path.parent / f"{input_video_path.stem}_processed{output_ext}"
-    else: # png
+    else: 
         output_path = input_video_path.parent / f"{input_video_path.stem}_processed"
         
     print(f"Input Video  : {input_video_path}")
@@ -52,22 +68,23 @@ def main():
     print(f"Destination  : {output_path}")
     print("-" * 40)
     
+    model_path = download_model_if_needed()
+    
     if args.format == "video":
         hex_color = args.bg_color.lstrip('#')
-        if len(hex_color) != 6:
+        if len(hex_color) not in (6, 8):
             print("Error: Invalid hex color format. Use e.g. '#FF0000'.")
             sys.exit(1)
+            
+        hex_color = hex_color[:6]  # Use only the RGB part if an alpha channel was supplied
         r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
         replacement_color = (b, g, r) # OpenCV uses BGR
         
-        remove_bg_to_video(str(input_video_path), str(output_path), replacement_color, args.bg_image)
+        remove_bg_to_video(str(input_video_path), str(output_path), model_path, replacement_color, args.bg_image)
     else:
-        remove_bg_to_png(str(input_video_path), str(output_path))
+        remove_bg_to_png(str(input_video_path), str(output_path), model_path)
 
-def remove_bg_to_video(input_path, output_path, replacement_color=(0, 255, 0), bg_image_path=None):
-    mp_selfie_segmentation = mp.solutions.selfie_segmentation
-    selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
-    
+def remove_bg_to_video(input_path, output_path, model_path, replacement_color=(0, 255, 0), bg_image_path=None):
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
         print(f"Error: Could not open video {input_path}")
@@ -95,36 +112,34 @@ def remove_bg_to_video(input_path, output_path, replacement_color=(0, 255, 0), b
 
     frame_count = 0
     
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    with get_segmenter(model_path) as segmenter:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+            result = segmenter.segment(mp_image)
             
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = selfie_segmentation.process(frame_rgb)
-        
-        # You can adjust this threshold (0.1) if you find it's cutting out too much or too little of you
-        mask = results.segmentation_mask > 0.1
-        
-        condition = np.stack((mask,) * 3, axis=-1)
-        output_frame = np.where(condition, frame, base_bg_image)
-        
-        out.write(output_frame)
-        
-        frame_count += 1
-        if frame_count % 30 == 0 or frame_count == total_frames:
-            print(f"Processed {frame_count} / {total_frames} frames...", end='\r')
+            # Extract boolean mask (foreground > 0.1)
+            mask = result.confidence_masks[0].numpy_view()[:, :, 0] > 0.1
+            
+            condition = np.stack((mask,) * 3, axis=-1)
+            output_frame = np.where(condition, frame, base_bg_image)
+            
+            out.write(output_frame)
+            
+            frame_count += 1
+            if frame_count % 30 == 0 or frame_count == total_frames:
+                print(f"Processed {frame_count} / {total_frames} frames...", end='\r')
 
     print(f"\nDone! Video saved to: {output_path}")
     cap.release()
     out.release()
 
-def remove_bg_to_png(input_path, output_folder):
-    from pathlib import Path
+def remove_bg_to_png(input_path, output_folder, model_path):
     Path(output_folder).mkdir(parents=True, exist_ok=True)
-    
-    mp_selfie_segmentation = mp.solutions.selfie_segmentation
-    selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
     
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -135,26 +150,28 @@ def remove_bg_to_png(input_path, output_folder):
     print("Working on PNG Image Sequence...")
     
     frame_count = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    with get_segmenter(model_path) as segmenter:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+            result = segmenter.segment(mp_image)
             
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = selfie_segmentation.process(frame_rgb)
-        
-        mask = results.segmentation_mask > 0.1
-        b, g, r = cv2.split(frame)
-        alpha_channel = np.where(mask, 255, 0).astype(np.uint8)
-        transparent_frame = cv2.merge([b, g, r, alpha_channel])
-        
-        # Save as a formatted string: frame_00000.png, frame_00001.png
-        output_file = Path(output_folder) / f"frame_{frame_count:05d}.png"
-        cv2.imwrite(str(output_file), transparent_frame)
-        
-        frame_count += 1
-        if frame_count % 30 == 0 or frame_count == total_frames:
-            print(f"Processed {frame_count} / {total_frames} frames...", end='\r')
+            mask = result.confidence_masks[0].numpy_view()[:, :, 0] > 0.1
+            
+            b, g, r = cv2.split(frame)
+            alpha_channel = np.where(mask, 255, 0).astype(np.uint8)
+            transparent_frame = cv2.merge([b, g, r, alpha_channel])
+            
+            output_file = Path(output_folder) / f"frame_{frame_count:05d}.png"
+            cv2.imwrite(str(output_file), transparent_frame)
+            
+            frame_count += 1
+            if frame_count % 30 == 0 or frame_count == total_frames:
+                print(f"Processed {frame_count} / {total_frames} frames...", end='\r')
 
     print(f"\nDone! Saved {frame_count} PNGs to folder: {output_folder}")
     cap.release()
