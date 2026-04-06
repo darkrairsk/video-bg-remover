@@ -14,9 +14,9 @@ def main():
     # Requirement 1 & 3: Configurable options, default is mp4
     parser.add_argument(
         "--format", 
-        choices=["mp4", "png"], 
-        default="mp4", 
-        help="Output format: 'mp4' for green screen video, 'png' for transparent image sequence (default: mp4)"
+        choices=["video", "png"], 
+        default="video", 
+        help="Output format: 'video' for processed video, 'png' for transparent image sequence (default: video)"
     )
     
     parser.add_argument(
@@ -41,8 +41,9 @@ def main():
         sys.exit(1)
         
     # Requirement 4: Output in same folder, with _processed added
-    if args.format == "mp4":
-        output_path = input_video_path.parent / f"{input_video_path.stem}_processed.mp4"
+    if args.format == "video":
+        output_ext = input_video_path.suffix if input_video_path.suffix.lower() in ['.mp4', '.mov', '.avi', '.mkv'] else '.mp4'
+        output_path = input_video_path.parent / f"{input_video_path.stem}_processed{output_ext}"
     else: # png
         output_path = input_video_path.parent / f"{input_video_path.stem}_processed"
         
@@ -51,7 +52,7 @@ def main():
     print(f"Destination  : {output_path}")
     print("-" * 40)
     
-    if args.format == "mp4":
+    if args.format == "video":
         hex_color = args.bg_color.lstrip('#')
         if len(hex_color) != 6:
             print("Error: Invalid hex color format. Use e.g. '#FF0000'.")
@@ -59,11 +60,11 @@ def main():
         r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
         replacement_color = (b, g, r) # OpenCV uses BGR
         
-        remove_bg_to_mp4(str(input_video_path), str(output_path), replacement_color, args.bg_image)
+        remove_bg_to_video(str(input_video_path), str(output_path), replacement_color, args.bg_image)
     else:
         remove_bg_to_png(str(input_video_path), str(output_path))
 
-def remove_bg_to_mp4(input_path, output_path, replacement_color=(0, 255, 0), bg_image_path=None):
+def remove_bg_to_video(input_path, output_path, replacement_color=(0, 255, 0), bg_image_path=None):
     mp_selfie_segmentation = mp.solutions.selfie_segmentation
     selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
     
@@ -86,11 +87,11 @@ def remove_bg_to_mp4(input_path, output_path, replacement_color=(0, 255, 0), bg_
             print(f"Error: Could not load background image '{bg_image_path}'.")
             return
         base_bg_image = cv2.resize(bg_img, (width, height))
-        print("Working on MP4 (Custom Image)...")
+        print("Working on Video (Custom Image)...")
     else:
         base_bg_image = np.zeros((height, width, 3), dtype=np.uint8)
         base_bg_image[:] = replacement_color
-        print("Working on MP4 (Solid Color)...")
+        print("Working on Video (Solid Color)...")
 
     frame_count = 0
     

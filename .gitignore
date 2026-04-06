@@ -3,4 +3,4 @@ venv/
 __pycache__/
 .DS_Store
 *_processed
-*_processed.mp4
+*_processed.*

@@ -27,26 +27,26 @@ Run `remove_bg.py` by providing the path to your input video.
 
 ### Basic Usage:
 ```bash
-python remove_bg.py path/to/your/video.mp4
+python remove_bg.py path/to/your/video.mov
 ```
-This will generate a video with a solid green background (Green Screen) by default. The output will be saved in the same directory as the input video with `_processed` appended to the filename.
+This will generate a video with a solid green background (Green Screen) by default. The script supports common video formats like `.mp4`, `.mov`, and `.avi`. The output will be saved in the same directory as the input video with `_processed` appended to the filename and the same extension as the original video.
 
 ### Using a Custom Background Color:
 You can specify a custom background color using a HEX code.
 ```bash
-python remove_bg.py user_video.mp4 --bg-color "#FF0000"
+python remove_bg.py user_video.mov --bg-color "#FF0000"
 ```
 
 ### Using a Custom Background Image:
 You can replace the background with an image. The script will resize the image to fit your video's resolution.
 ```bash
-python remove_bg.py user_video.mp4 --bg-image beautiful_scenery.jpg
+python remove_bg.py user_video.mov --bg-image beautiful_scenery.jpg
 ```
 
 ### Transparent Image Sequence (PNG):
 If you need a perfectly transparent background, you can output a sequence of PNG frames.
 ```bash
-python remove_bg.py user_video.mp4 --format png
+python remove_bg.py user_video.mov --format png
 ```
 
 ## How It Works
