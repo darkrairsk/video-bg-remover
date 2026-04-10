@@ -5,3 +5,9 @@ __pycache__/
 *_processed
 *_processed.*
 *.tflite
+
+# BGMv2 model weights (auto-downloaded, ~15MB)
+torchscript_*.pth
+
+# Videos folder (raw + processed videos, too large for git)
+videos/
