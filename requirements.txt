@@ -3,8 +3,9 @@ torch>=2.0.0
 torchvision>=0.15.0
 
 # Video & image processing
-opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
 numpy>=1.24.0
+imageio-ffmpeg>=0.4.0
 
 # Rich terminal UI
 rich>=13.0.0

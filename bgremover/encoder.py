@@ -23,6 +23,9 @@ import numpy as np
 # Output path helpers
 # ---------------------------------------------------------------------------
 
+import imageio_ffmpeg
+_FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+
 _VIDEOS_DIR = Path(__file__).resolve().parent.parent / "videos"
 _FORMAT_EXT = {
     "prores": ".mov",
@@ -78,7 +81,7 @@ def extract_audio(video_path: str, tmp_dir: str) -> Optional[str]:
     """
     audio_path = os.path.join(tmp_dir, "audio.aac")
     cmd = [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-i", video_path,
         "-vn",
         "-acodec", "copy",
@@ -100,7 +103,7 @@ def extract_audio(video_path: str, tmp_dir: str) -> Optional[str]:
 
 def _ffmpeg_cmd_prores(width: int, height: int, fps: float, out_path: str) -> list:
     return [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-f", "rawvideo", "-vcodec", "rawvideo",
         "-pix_fmt", "rgba",
         "-s", f"{width}x{height}",
@@ -116,7 +119,7 @@ def _ffmpeg_cmd_prores(width: int, height: int, fps: float, out_path: str) -> li
 
 def _ffmpeg_cmd_webm(width: int, height: int, fps: float, out_path: str) -> list:
     return [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-f", "rawvideo", "-vcodec", "rawvideo",
         "-pix_fmt", "rgba",
         "-s", f"{width}x{height}",
@@ -213,7 +216,7 @@ class PngEncoder:
 def remux_audio(video_path: str, audio_path: str, final_path: str) -> None:
     """Merge ProRes/WebM video with an extracted audio track."""
     cmd = [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-i", video_path,
         "-i", audio_path,
         "-c:v", "copy",
