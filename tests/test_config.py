@@ -56,6 +56,7 @@ class TestLoad:
         assert set(cfg.DEFAULTS.keys()) == {
             "model_type", "format", "max_short_side",
             "output_suffix", "default_bg_image", "device",
+            "internal_res", "guided_filter",
         }
 
 

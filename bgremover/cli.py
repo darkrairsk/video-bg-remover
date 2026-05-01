@@ -67,9 +67,8 @@ Examples:
     mdl = parser.add_argument_group("Model")
     mdl.add_argument(
         "--model-type", dest="model_type",
-        choices=["rvm", "bgmv2"], default=None,
-        help="rvm (default) — no background plate needed, better temporal consistency. "
-             "bgmv2 — sharper in controlled studio environments.",
+        choices=["rvm", "rvm_resnet50", "bgmv2"], default=None,
+        help="rvm (default) | rvm_resnet50 (slower, better edges) | bgmv2",
     )
     mdl.add_argument(
         "--model", metavar="PATH", default=None,
@@ -79,12 +78,24 @@ Examples:
         "--device", choices=["auto", "mps", "cuda", "cpu"], default=None,
         help="Compute device (default: auto → mps → cuda → cpu).",
     )
+    mdl.add_argument(
+        "--internal-res", dest="internal_res", type=int, default=None,
+        help="Target short-side resolution for RVM inference (default: 512).",
+    )
 
     # ── Output ────────────────────────────────────────────────────────────
     out = parser.add_argument_group("Output")
     out.add_argument(
         "--format", dest="format", choices=["prores", "webm", "png"], default=None,
         help="Output format: prores (default, CapCut-ready), webm (web/smaller), png (frame sequence).",
+    )
+    out.add_argument(
+        "--guided-filter", action="store_true", default=None,
+        help="Apply OpenCV Guided Filter to smooth AI mask against original frame.",
+    )
+    out.add_argument(
+        "--no-guided-filter", action="store_false", dest="guided_filter", default=None,
+        help="Disable Guided Filter.",
     )
 
     # ── Workflow ──────────────────────────────────────────────────────────
@@ -117,17 +128,64 @@ def main(argv=None):
         print(cfg_module.show())
         sys.exit(0)
 
-    if not args.input:
-        parser.error("--input is required.")
-
-    # ── Load + merge config ─────────────────────────────────────────────
+    # ── Load config ─────────────────────────────────────────────────────
     cfg = cfg_module.load()
+
+    # ── Interactive Mode if no --input ──────────────────────────────────
+    if not args.input:
+        from rich.prompt import Prompt, Confirm
+        try:
+            console.print("\n[bold cyan]✨ bgremover Interactive Menu ✨[/bold cyan]")
+            console.print("[dim]Press Ctrl+C to exit at any time.[/dim]\n")
+            
+            while True:
+                video_path = Prompt.ask("[bold]🎬 Enter input video path[/bold]")
+                p = Path(video_path).expanduser().resolve()
+                if p.exists() and p.is_file():
+                    args.input = str(p)
+                    break
+                else:
+                    console.print(f"[red]❌ File not found: {video_path}[/red]")
+                    
+            args.format = Prompt.ask(
+                "[bold]🗂️  Select output format[/bold]",
+                choices=["prores", "webm", "png"],
+                default=cfg.get("format", "prores")
+            )
+            
+            args.model_type = Prompt.ask(
+                "[bold]🧠 Select AI model[/bold]",
+                choices=["rvm", "rvm_resnet50", "bgmv2"],
+                default=cfg.get("model_type", "rvm")
+            )
+            
+            args.internal_res = int(Prompt.ask(
+                "[bold]📐 Internal Resolution (higher = sharper edges, slower)[/bold]",
+                default=str(cfg.get("internal_res", 512))
+            ))
+            
+            args.guided_filter = Confirm.ask(
+                "[bold]🧹 Enable Guided Filter post-processing for smoother edges?[/bold]",
+                default=cfg.get("guided_filter", False)
+            )
+            
+            if Confirm.ask("[bold]🔍 Run a quick 5-frame preview first?[/bold]", default=False):
+                args.preview = 5
+                
+            console.print("\n[bold green]Ready![/bold green] Starting pipeline...\n")
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelled by user.[/yellow]")
+            sys.exit(0)
+
+    # ── Merge config with args ──────────────────────────────────────────
     cfg = cfg_module.merge_args(cfg, args)
 
     model_type: str = cfg["model_type"]
     fmt:        str = cfg["format"]
     max_short:  int = cfg["max_short_side"]
     device_pref:str = cfg["device"]
+    internal_res:int= cfg["internal_res"]
+    guided_filter:bool=cfg["guided_filter"]
 
     # ── Validate input ──────────────────────────────────────────────────
     input_path = Path(args.input).resolve()
@@ -162,6 +220,10 @@ def main(argv=None):
             to_save["default_bg_image"] = args.bg_image
         if args.device:
             to_save["device"] = args.device
+        if getattr(args, "internal_res", None) is not None:
+            to_save["internal_res"] = args.internal_res
+        if getattr(args, "guided_filter", None) is not None:
+            to_save["guided_filter"] = args.guided_filter
         if to_save:
             cfg_module.save(to_save)
             console.print(f"💾  Config saved → [underline]{cfg_module.CONFIG_PATH}[/underline]")
@@ -200,6 +262,8 @@ def main(argv=None):
             device=device,
             bg_image=bg_image,
             max_short=max_short,
+            internal_res=internal_res,
+            guided_filter=guided_filter,
         )
         console.print(f"\n🔍  Preview saved to: [underline]{out_folder}[/underline]")
         sys.exit(0)
@@ -215,4 +279,6 @@ def main(argv=None):
         bg_image=bg_image,
         fmt=fmt,
         max_short=max_short,
+        internal_res=internal_res,
+        guided_filter=guided_filter,
     )

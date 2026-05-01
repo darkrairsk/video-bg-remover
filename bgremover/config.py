@@ -17,9 +17,11 @@ from typing import Any, Dict, Optional
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 
 DEFAULTS: Dict[str, Any] = {
-    "model_type": "rvm",            # rvm | bgmv2
+    "model_type": "rvm",            # rvm | rvm_resnet50 | bgmv2
     "format": "prores",             # prores | webm | png
     "max_short_side": 1080,         # downscale if video shorter side > this
+    "internal_res": 512,            # RVM downsample resolution target
+    "guided_filter": False,         # apply OpenCV guided filter smoothing
     "output_suffix": "_processed",  # appended to input stem for auto-naming
     "default_bg_image": None,       # path string or null
     "device": "auto",               # auto | mps | cuda | cpu
@@ -69,6 +71,8 @@ def merge_args(cfg: Dict[str, Any], args: Any) -> Dict[str, Any]:
         "format": "format",
         "bg_image": "default_bg_image",
         "device": "device",
+        "internal_res": "internal_res",
+        "guided_filter": "guided_filter",
     }
     for arg_attr, cfg_key in arg_map.items():
         val = getattr(args, arg_attr, None)

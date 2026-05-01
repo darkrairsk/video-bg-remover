@@ -79,6 +79,7 @@ def compute_downsample_ratio(width: int, height: int, target: int = 512) -> floa
 def compose_rgba(
     fgr: torch.Tensor,
     pha: torch.Tensor,
+    guide_bgr: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Build a (H, W, 4) uint8 RGBA frame ready to be piped to FFmpeg.
@@ -96,6 +97,16 @@ def compose_rgba(
     alpha = pha.squeeze().cpu().numpy()          # (H, W) float [0,1]
     fg    = fgr.squeeze().cpu().numpy()          # (3, H, W) float [0,1]
     fg    = np.transpose(fg, (1, 2, 0))          # → (H, W, 3) RGB
+
+    if guide_bgr is not None:
+        try:
+            guide = guide_bgr.astype(np.float32) / 255.0
+            gf = cv2.ximgproc.createGuidedFilter(guide=guide, radius=5, eps=1e-4)
+            alpha = gf.filter(alpha)
+            alpha = np.clip(alpha, 0.0, 1.0)
+        except AttributeError:
+            # Fallback if ximgproc isn't installed
+            console.print("[red]Warning: cv2.ximgproc not found. Guided Filter skipped.[/red]")
 
     # Pre-multiply
     fg_pm = fg * alpha[:, :, np.newaxis]         # (H, W, 3)
@@ -175,6 +186,8 @@ def run_preview(
     device: torch.device,
     bg_image: Optional[np.ndarray],
     max_short: int = 1080,
+    internal_res: int = 512,
+    guided_filter: bool = False,
 ) -> Path:
     """
     Process *n* evenly-spaced frames and save PNG previews.
@@ -199,7 +212,7 @@ def run_preview(
         bg_tensor = frame_to_tensor(bg_resized, device)
 
     rec = [None] * 4
-    dr = torch.tensor([compute_downsample_ratio(proc_w, proc_h)], dtype=torch.float32).to(device)
+    dr = torch.tensor([compute_downsample_ratio(proc_w, proc_h, internal_res)], dtype=torch.float32).to(device)
 
     console.print(f"\n🔍  Preview mode: processing {n} frames …")
 
@@ -211,12 +224,12 @@ def run_preview(
         frame = cv2.resize(frame, (proc_w, proc_h))
         src = frame_to_tensor(frame, device)
 
-        if model_type == "rvm":
+        if model_type.startswith("rvm"):
             fgr, pha, rec = _infer_rvm(model, src, rec, dr)
         else:
             fgr, pha = _infer_bgmv2(model, src, bg_tensor)
 
-        rgba = compose_rgba(fgr, pha)
+        rgba = compose_rgba(fgr, pha, guide_bgr=frame if guided_filter else None)
         bgra = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
         out_file = out_folder / f"preview_{i+1:02d}_frame{idx:05d}.png"
         cv2.imwrite(str(out_file), bgra)
@@ -240,6 +253,8 @@ def run(
     bg_image: Optional[np.ndarray],
     fmt: str = "prores",
     max_short: int = 1080,
+    internal_res: int = 512,
+    guided_filter: bool = False,
 ) -> None:
     """
     Process all frames of *input_path* and write to *output_path*.
@@ -271,7 +286,7 @@ def run(
     # ---- RVM state ----
     rec = [None] * 4
     dr  = torch.tensor(
-        [compute_downsample_ratio(proc_w, proc_h)],
+        [compute_downsample_ratio(proc_w, proc_h, internal_res)],
         dtype=torch.float32,
     ).to(device)
 
@@ -314,12 +329,12 @@ def run(
 
                 src = frame_to_tensor(frame, device)
 
-                if model_type == "rvm":
+                if model_type.startswith("rvm"):
                     fgr, pha, rec = _infer_rvm(model, src, rec, dr)
                 else:
                     fgr, pha = _infer_bgmv2(model, src, bg_tensor)
 
-                rgba = compose_rgba(fgr, pha)
+                rgba = compose_rgba(fgr, pha, guide_bgr=frame if guided_filter else None)
                 enc.write(rgba)
 
                 frame_idx += 1
