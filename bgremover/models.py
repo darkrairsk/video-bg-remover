@@ -15,7 +15,7 @@ from typing import Literal, Tuple
 
 import torch
 
-ModelType = Literal["rvm", "bgmv2"]
+ModelType = Literal["rvm", "rvm_resnet50", "bgmv2"]
 
 # ---------------------------------------------------------------------------
 # Model registry
@@ -28,6 +28,14 @@ MODELS = {
             "rvm_mobilenetv3_fp32.torchscript"
         ),
         "display_name": "RVM MobileNetV3",
+    },
+    "rvm_resnet50": {
+        "filename": "rvm_resnet50_fp32.torchscript",
+        "url": (
+            "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/"
+            "rvm_resnet50_fp32.torchscript"
+        ),
+        "display_name": "RVM ResNet50",
     },
     "bgmv2": {
         "filename": "torchscript_mobilenetv2_fp32.pth",
@@ -114,7 +122,7 @@ def load(
     model_path = get_model_path(model_type, custom_path)
     download_if_needed(model_type, model_path)
 
-    if model_type == "rvm":
+    if model_type.startswith("rvm"):
         model = load_rvm(model_path, device)
     else:
         model = load_bgmv2(model_path, device)
