@@ -1,6 +1,6 @@
 # Video Background Remover
 
-AI-powered background removal for selfie videos using **BackgroundMattingV2**. Outputs a **ProRes 4444 `.mov`** with a true alpha channel — ready to drop into CapCut, DaVinci Resolve, or Final Cut Pro for YouTube Shorts editing.
+AI-powered background removal for selfie videos using **Robust Video Matting (RVM)** and **BackgroundMattingV2**. Outputs a **ProRes 4444 `.mov`** with a true alpha channel — ready to drop into CapCut, DaVinci Resolve, or Final Cut Pro for YouTube Shorts editing.
 
 Optimised for **Apple Silicon (Mac M2/M3/M4)** via the PyTorch MPS backend.
 
@@ -8,11 +8,12 @@ Optimised for **Apple Silicon (Mac M2/M3/M4)** via the PyTorch MPS backend.
 
 ## Features
 
-- 🧠 **BackgroundMattingV2** — state-of-the-art soft alpha matting (CVPR 2021)
+- 🧠 **Robust Video Matting (RVM)** & **BackgroundMattingV2** — state-of-the-art soft alpha matting
 - 🍎 **Apple MPS acceleration** — GPU inference on Apple Silicon, auto-falls back to CPU
 - 🎬 **ProRes 4444 with Alpha** — true transparency, not green-screen
 - 🔊 **Audio preserved** — original audio remuxed into the final file
-- 📐 **Auto-downscale** — videos larger than 1080p are scaled down for fast processing
+- 📐 **Auto-downscale & Internal Resolution** — scale for fast processing (`--internal-res`)
+- 🧹 **Guided Filter Smoothing** — edge smoothing using OpenCV guided filter (`--guided-filter`)
 - 🖼 **Smart background detection** — checks `assets/` for a saved plate before extracting from frames
 - 📁 **Organised output** — raw + processed videos live together in `videos/`
 
@@ -41,7 +42,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> **Model auto-download:** On the very first run the script automatically downloads the BGMv2 TorchScript model (~15 MB) from GitHub Releases into the project root. No manual setup needed.
+> **Model auto-download:** On the very first run the script automatically downloads the requested model (`rvm`, `rvm_resnet50`, or `bgmv2`) from GitHub Releases into the project root. No manual setup needed.
 
 ---
 
@@ -52,9 +53,11 @@ pip install -r requirements.txt
 | Argument | Required | Default | Description |
 |---|---|---|---|
 | `--input` | ✅ Yes | — | Path to the input `.mov` / `.mp4` video |
-| `--bg-image` | ❌ No | Auto-detected | Path to a clean background image (see Background Plate logic below) |
+| `--model-type` | ❌ No | `rvm` | `rvm` (MobileNetV3), `rvm_resnet50`, or `bgmv2` |
+| `--bg-image` | ❌ No | Auto-detected | Path to a clean background image (required for bgmv2, optional for rvm) |
 | `--output` | ❌ No | `videos/<name>_processed.mov` | Custom path for the output `.mov` |
-| `--model` | ❌ No | `./torchscript_mobilenetv2_fp32.pth` | Path to a custom TorchScript model file |
+| `--internal-res` | ❌ No | `512` | Target short-side resolution for inference |
+| `--guided-filter` | ❌ No | `False` | Apply OpenCV Guided Filter for smoother edges |
 
 ---
 
@@ -102,7 +105,9 @@ python remove_bg.py \
   --input   videos/selfie.mov \
   --bg-image assets/bg_image.jpg \
   --output  videos/selfie_processed.mov \
-  --model   torchscript_mobilenetv2_fp32.pth
+  --model-type rvm_resnet50 \
+  --internal-res 720 \
+  --guided-filter
 ```
 
 ---
@@ -120,20 +125,19 @@ python remove_bg.py --input ~/Downloads/clip.mov --bg-image assets/bg_image.jpg
 
 ---
 
-### 6 — Use a custom / alternative model
+### 6 — Pick an AI Model
 
 ```bash
-python remove_bg.py \
-  --input videos/selfie.mov \
-  --model /path/to/torchscript_resnet50_fp32.pth
+python remove_bg.py --input videos/selfie.mov --model-type rvm_resnet50
 ```
 
-Available BGMv2 model variants from the [GitHub Releases](https://github.com/PeterL1n/BackgroundMattingV2/releases/tag/v1.0.0):
+Available model types (auto-downloaded on first use):
 
-| File | Backbone | Speed | Quality |
+| `--model-type` | Backbone | Speed | Quality |
 |---|---|---|---|
-| `torchscript_mobilenetv2_fp32.pth` | MobileNetV2 | ⚡ Fast | Good |
-| `torchscript_resnet50_fp32.pth` | ResNet-50 | 🐢 Slower | Better |
+| `rvm` (default) | MobileNetV3 | ⚡ Very Fast | Good |
+| `rvm_resnet50` | ResNet-50 | 🐢 Slower | Best |
+| `bgmv2` | MobileNetV2 | ⚡ Fast | Good (requires bg plate) |
 
 ---
 
@@ -179,7 +183,8 @@ video-bg-remover/
 │   ├── another_sample.mov
 │   └── another_sample_processed.mov
 ├── docs/
-│   └── ADR-001-bgmv2-prores-pipeline.md  ← Architecture Decision Record
+│   ├── ADR-001-bgmv2-prores-pipeline.md  ← Architecture Decision Record
+│   └── ADR-002-rvm-upgrade.md            ← RVM upgrade decisions
 ├── remove_bg.py                         ← Main CLI script
 ├── requirements.txt                     ← Python dependencies
 ├── torchscript_mobilenetv2_fp32.pth     ← Auto-downloaded model (gitignored)
@@ -205,15 +210,15 @@ video-bg-remover/
 |---|---|
 | `torch` | PyTorch — model inference + MPS backend |
 | `torchvision` | Vision utilities (required by BGMv2) |
-| `opencv-python` | Frame reading from video |
+| `opencv-contrib-python` | Frame reading, resizing, guided filter smoothing |
+| `imageio-ffmpeg` | Robust FFmpeg binary fetching |
 | `numpy` | Tensor ↔ numpy conversion, RGBA composition |
-| `ffmpeg` *(system)* | ProRes encoding, audio demux/remux |
 
 ---
 
 ## Architecture Decisions
 
-See [`docs/ADR-001-bgmv2-prores-pipeline.md`](docs/ADR-001-bgmv2-prores-pipeline.md) for rationale on every major technical choice (model selection, MPS backend, FFmpeg pipe, ProRes 4444, background plate strategy).
+See [`docs/ADR-001-bgmv2-prores-pipeline.md`](docs/ADR-001-bgmv2-prores-pipeline.md) and [`docs/ADR-002-rvm-upgrade.md`](docs/ADR-002-rvm-upgrade.md) for rationale on every major technical choice (model selection, MPS backend, FFmpeg pipe, ProRes 4444, background plate strategy).
 
 ---
 
